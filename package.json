@@ -1,0 +1,22 @@
+{
+  "name": "spc-player",
+  "version": "1.0.0",
+  "description": "Plays SPC music to spcduino via serial",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/dxprog/spc-player.git"
+  },
+  "keywords": [
+    "SNES"
+  ],
+  "author": "Matt Hackmann <matt@dxprog.com>",
+  "license": "WTFPL",
+  "bugs": {
+    "url": "https://github.com/dxprog/spc-player/issues"
+  },
+  "homepage": "https://github.com/dxprog/spc-player#readme"
+}
