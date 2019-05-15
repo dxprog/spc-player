@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import SpcReader, { ISpc } from 'spc-reader';
 
 import { BootLoader, DspLoader } from './programs';
@@ -18,7 +19,7 @@ export class SpcWriter {
    *
    * @param spcFileName The path to the SPC file to play
    */
-  async read(spcFileName: string) {
+  async load(spcFileName: string) {
     this.spc = await SpcReader(spcFileName);
 
     // Calculate where the stack pointer will be
@@ -30,23 +31,24 @@ export class SpcWriter {
   }
 
   /**
-   * Writes the SPC out to the spcduino
+   * Plays the SPC out to the spcduino
    */
-  async write() {
+  async play() {
     // Make a copy of the SPC data for augmentation
     const programData = Buffer.from(this.spc.programData.map(byte => byte));
 
     // Copy in the boot loader
     this.bootLoader.copy(programData, this.bootLoaderOffset);
 
-    // Initialize the stack
+    // Initialize the stack (stack space is at 0x100)
     programData[0xFF] = this.stackPointer;
-    programData[this.stackPointer + 1] = this.spc.regA;
-    programData[this.stackPointer + 2] = this.spc.regX;
-    programData[this.stackPointer + 3] = this.spc.regY;
-    programData[this.stackPointer + 4] = this.spc.regPSW;
-    programData[this.stackPointer + 5] = this.spc.regPC & 0xFF;
-    programData[this.stackPointer + 6] = this.spc.regPC >> 8;
+    const stackPointer = 0x100 + this.stackPointer;
+    programData[stackPointer + 1] = this.spc.regA;
+    programData[stackPointer + 2] = this.spc.regX;
+    programData[stackPointer + 3] = this.spc.regY;
+    programData[stackPointer + 4] = this.spc.regPSW;
+    programData[stackPointer + 5] = this.spc.regPC & 0xFF;
+    programData[stackPointer + 6] = this.spc.regPC >> 8;
   }
 
   /**
@@ -61,6 +63,7 @@ export class SpcWriter {
 
     // Copy over the boot loader program and replace certain values with data
     // from the SPC program
+    this.bootLoader = Buffer.alloc(BootLoader.length);
     BootLoader.copy(this.bootLoader);
     this.bootLoader[0x01] = this.spc.programData[0x00];
     this.bootLoader[0x04] = this.spc.programData[0x01];
@@ -76,6 +79,7 @@ export class SpcWriter {
    * Writes the DSP register loader
    */
   private writeDspLoader() {
+    this.dspLoader = Buffer.alloc(DspLoader.length);
     DspLoader.copy(this.dspLoader);
     this.dspLoader[0x0F] = this.spc.programData[0xFC];
     this.dspLoader[0x12] = this.spc.programData[0xFB];
@@ -107,6 +111,7 @@ export class SpcWriter {
         // If the end of the loop was reached, we've got empty space
         if (j === i) {
           retVal = i - bootLoaderSize;
+          console.info(`Found space for boot loader at 0x${retVal.toString(16)}`);
           break;
         }
       }
