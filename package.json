@@ -4,6 +4,7 @@
   "description": "Plays SPC music to spcduino via serial",
   "main": "index.js",
   "scripts": {
+    "start": "ts-node src/index.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -18,5 +19,14 @@
   "bugs": {
     "url": "https://github.com/dxprog/spc-player/issues"
   },
-  "homepage": "https://github.com/dxprog/spc-player#readme"
+  "homepage": "https://github.com/dxprog/spc-player#readme",
+  "dependencies": {
+    "serialport": "^7.1.5",
+    "spc-reader": "^1.0.1"
+  },
+  "devDependencies": {
+    "@types/serialport": "^7.0.3",
+    "ts-node": "^8.1.0",
+    "typescript": "^3.4.5"
+  }
 }
