@@ -34,8 +34,13 @@ export class SpcWriter {
    * Plays the SPC out to the spcduino
    */
   async play() {
-    // Make a copy of the SPC data for augmentation
+    // Make a copy of the SPC data and DSP registers for augmentation
     const programData = Buffer.from(this.spc.programData.map(byte => byte));
+    const dspRegisters = Buffer.from(this.spc.dspRegisters.map(byte => byte));
+
+    // Mute all voices and let the SPC program re-enable as needed
+    dspRegisters[0x6C] = 0x60;
+    dspRegisters[0x4C] = 0x00;
 
     // Copy in the boot loader
     this.bootLoader.copy(programData, this.bootLoaderOffset);
@@ -61,18 +66,24 @@ export class SpcWriter {
       throw new Error('Unable to find space to place boot loader');
     }
 
+    const { programData } = this.spc;
+
+    // If there's no data on the external ports (0xF4 - 0xF7), make not as it
+    // changes a value we write to the boot loader
+    const hasInPortValues = !programData[0xF4] && !programData[0xF5] && !programData[0xF6] && !programData[0xF7];
+
     // Copy over the boot loader program and replace certain values with data
     // from the SPC program
     this.bootLoader = Buffer.alloc(BootLoader.length);
     BootLoader.copy(this.bootLoader);
-    this.bootLoader[0x01] = this.spc.programData[0x00];
-    this.bootLoader[0x04] = this.spc.programData[0x01];
-    this.bootLoader[0x10] = this.spc.programData[0xF4];
-    this.bootLoader[0x16] = this.spc.programData[0xF7];
-    this.bootLoader[0x1A] = this.spc.programData[0xF1] & 0xCF;
+    this.bootLoader[0x01] = programData[0x00];
+    this.bootLoader[0x04] = programData[0x01];
+    this.bootLoader[0x10] = hasInPortValues ? programData[0xF4] : 0x01;
+    this.bootLoader[0x16] = programData[0xF7];
+    this.bootLoader[0x1A] = programData[0xF1] & 0xCF;
     this.bootLoader[0x20] = this.spc.dspRegisters[0x6C];
     this.bootLoader[0x26] = this.spc.dspRegisters[0x47];
-    this.bootLoader[0x29] = this.spc.programData[0xF2];
+    this.bootLoader[0x29] = programData[0xF2];
   }
 
   /**
@@ -97,8 +108,17 @@ export class SpcWriter {
     let retVal = -1;
     const bootLoaderSize = BootLoader.length;
 
+    // Calculate where the echo data is. We don't want to overwrite that
+    const dspEchoAddress = this.spc.dspRegisters[0x6D] * 0x100;
+    const dspEchoSize = this.spc.dspRegisters[0x7D] * 0x800;
+
     // Start at the back of the SPC and work backwards
     for (let i = HIGHEST_BOOTABLE_ADDRESS; i > LOWEST_BOOTABLE_ADDRESS + bootLoaderSize; i--) {
+      // If this is inside echo space, move along
+      if (i >= dspEchoAddress && i <= dspEchoAddress + dspEchoSize) {
+        continue;
+      }
+
       // If this byte and the byte at the start of the chunk are the same, check for empty space in between
       if (this.spc.programData[i] === this.spc.programData[i - bootLoaderSize]) {
         let j;
