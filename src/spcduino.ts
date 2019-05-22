@@ -2,14 +2,21 @@ import * as SerialPort from 'serialport';
 const Readline: any = require('@serialport/parser-readline');
 
 // Command codes as defined by spcduino
-const CMD_RESET = 1;
-const CMD_LOAD_DSP = 2;
+const CMD_RESET = 1; // Resets the SPC700
+const CMD_LOAD_DSP = 2; // Sends the DSP loader program and register data
+const CMD_START_SPC = 3; // Begins SPC memory transfer
+const CMD_SPC_CHUNK = 4; // Transfers another chunk of SPC data
+const CMD_PLAY = 5; // Sends the parameters for playing the SPC
 
 // The response codes that can be received from the spcduino
 const RSP_OKAY = 1;
 const RSP_FAIL = 2;
 const RSP_BAD_CHECKSUM = 3;
 const RSP_READY = 86;
+
+// Maximum number of bytes to send in any serial transaction
+const MAX_SEND_SIZE = 64;
+const ZERO_PAGE_SIZE = 0xEF - 2;
 
 export class Spcduino {
   private port: SerialPort;
@@ -76,12 +83,31 @@ export class Spcduino {
   }
 
   /**
+   * Sends the SPC memory to the spcduino
+   *
+   * @param buffer The SPC program
+   */
+  async loadSPC(spcProgram: Buffer) {
+    try {
+      // Load zero page data
+      let buffer = Buffer.alloc(ZERO_PAGE_SIZE);
+      spcProgram.copy(buffer, 0, 2, 0xEF);
+      buffer = this.prepareBufferForSending(buffer);
+      await this.writeAndWait([ CMD_START_SPC, ...buffer ]);
+      console.log('zero page data written');
+    } catch (exc) {
+      const errorMsg = exc === RSP_BAD_CHECKSUM ? 'Failed checksum' : 'Unknown error';
+      throw new Error(`Error initializing DSP: ${errorMsg}`);
+    }
+  }
+
+  /**
    * Writes data to the spcduino and waits for a success/fail response. If
    * there is any failure, the promise will be rejected.
    *
    * @param buffer The data buffer to send to the spcduino
    */
-  private async writeAndWait(buffer: string | number[] | Buffer): Promise<any> {
+  private async writeAndWait(buffer: number[] | Buffer): Promise<any> {
     return new Promise((resolve, reject) => {
       if (!this.port.isOpen) {
         reject('Port has not been opened');
@@ -90,6 +116,7 @@ export class Spcduino {
       const handleDataEvent = (data: Buffer) => {
         this.port.off('data', handleDataEvent);
         this.port.off('eror', reject);
+        console.log('got data?', data);
         if (data[0] !== RSP_OKAY) {
           reject(data);
         } else {
@@ -99,12 +126,36 @@ export class Spcduino {
 
       this.port.on('error', reject);
       this.port.on('data', handleDataEvent);
-      this.port.write(buffer);
+      buffer = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+      this.writeBuffer(buffer, 0).catch(err => {
+        this.port.off('data', handleDataEvent);
+        this.port.off('eror', reject);
+        reject(err);
+      });
+    });
+  }
+
+  private async writeBuffer(buffer: Buffer, offset: number, bytesWritten: number = 0) {
+    return new Promise((resolve, reject) => {
+      // Calculate how much data to send without going over the chunk size limit
+      const chunkSize = buffer.byteLength - offset > MAX_SEND_SIZE ? MAX_SEND_SIZE : buffer.byteLength - offset;
+
+      // Using the above, create a new buffer with only the data we need to send
+      const sendBuffer = Buffer.alloc(chunkSize);
+      buffer.copy(sendBuffer, 0, offset, offset + chunkSize);
+      offset += chunkSize;
+
+      this.port.write(sendBuffer);
       this.port.drain(err => {
         if (err) {
           reject(err);
-          this.port.off('data', handleDataEvent);
-          this.port.off('eror', reject);
+        }
+        // Continue sending bytes until there's nothing left to send
+        else if (offset < buffer.byteLength) {
+          resolve(this.writeBuffer(buffer, offset, bytesWritten + chunkSize));
+        } else {
+          resolve();
+          console.log('Wrote ', bytesWritten + chunkSize, ' bytes');
         }
       });
     });
