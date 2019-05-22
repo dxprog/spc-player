@@ -63,7 +63,7 @@ export class Spcduino {
     try {
       // First send the DSP loader
       let buffer = this.prepareBufferForSending(dspLoader);
-      await this.writeAndWait(buffer);
+      await this.writeAndWait([ CMD_LOAD_DSP, ...buffer ]);
 
       // And then the DSP registers. spcduindo will respond once the
       // DSP loader program has run
