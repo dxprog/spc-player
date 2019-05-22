@@ -1,7 +1,7 @@
-import * as fs from 'fs';
 import SpcReader, { ISpc } from 'spc-reader';
 
 import { BootLoader, DspLoader } from './programs';
+import { Spcduino } from './spcduino';
 
 // The bounds for where the boot loader can be written to
 const LOWEST_BOOTABLE_ADDRESS = 0x100;
@@ -33,10 +33,10 @@ export class SpcWriter {
   /**
    * Plays the SPC out to the spcduino
    */
-  async play() {
+  async play(spcduino: Spcduino) {
     // Make a copy of the SPC data and DSP registers for augmentation
-    const programData = Buffer.from(this.spc.programData.map(byte => byte));
-    const dspRegisters = Buffer.from(this.spc.dspRegisters.map(byte => byte));
+    const programData = Buffer.from([ ...this.spc.programData ]);
+    const dspRegisters = Buffer.from([ ...this.spc.dspRegisters ]);
 
     // Mute all voices and let the SPC program re-enable as needed
     dspRegisters[0x6C] = 0x60;
@@ -54,6 +54,12 @@ export class SpcWriter {
     programData[stackPointer + 4] = this.spc.regPSW;
     programData[stackPointer + 5] = this.spc.regPC & 0xFF;
     programData[stackPointer + 6] = this.spc.regPC >> 8;
+
+    // Reset the spcduino
+    await spcduino.reset();
+
+    // Populate the DSP stuffs
+    await spcduino.initDsp(this.dspLoader, dspRegisters);
   }
 
   /**
