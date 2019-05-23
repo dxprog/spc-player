@@ -17,10 +17,10 @@ const RSP_READY = 86;
 // Maximum number of bytes to send in any serial transaction
 const MAX_SEND_SIZE = 64;
 const ZERO_PAGE_SIZE = 0xEF - 2;
+const SPC_CHUNK_SIZE = 0x80;
 
 export class Spcduino {
   private port: SerialPort;
-  private lineParser: any;
 
   constructor(portName: string, baudRate: number) {
     this.port = new SerialPort(portName, { baudRate, autoOpen: false });
@@ -36,8 +36,6 @@ export class Spcduino {
       // signal, so wait for that before resolving
       const handleDataEvent = (data: Buffer) => {
         if (data[0] === RSP_READY) {
-          this.lineParser = this.port.pipe(new Readline());
-          this.lineParser.on('data', this.handleDataEvent.bind(this));
           this.port.off('open', handleDataEvent);
           resolve();
         }
@@ -46,10 +44,6 @@ export class Spcduino {
       this.port.on('data', handleDataEvent);
       this.port.open(err => err ? reject(err) : null);
     });
-  }
-
-  handleDataEvent(data: string) {
-    console.log(`[SPCDUINO] ${data}`);
   }
 
   /**
@@ -94,11 +88,34 @@ export class Spcduino {
       spcProgram.copy(buffer, 0, 2, 0xEF);
       buffer = this.prepareBufferForSending(buffer);
       await this.writeAndWait([ CMD_START_SPC, ...buffer ]);
-      console.log('zero page data written');
+
+      // Send everything starting at address 0x100 (after the ports and such)
+      let currentAddress = 0x100;
+      while (currentAddress < 0xFFFF) {
+        buffer = Buffer.alloc(SPC_CHUNK_SIZE);
+        spcProgram.copy(buffer, 0, currentAddress, currentAddress + SPC_CHUNK_SIZE);
+        await this.writeSpcChunk(currentAddress, buffer);
+        currentAddress += SPC_CHUNK_SIZE;
+      }
     } catch (exc) {
       const errorMsg = exc === RSP_BAD_CHECKSUM ? 'Failed checksum' : 'Unknown error';
-      throw new Error(`Error initializing DSP: ${errorMsg}`);
+      throw new Error(`Error loading SPC data: ${errorMsg}`);
     }
+  }
+
+  /**
+   * Begins playback of the loaded SPC at the specified address
+   *
+   * @param {number} bootLoaderAddress The address of the boot loader
+   * @param {Uint8Array} portValues The values of ports 0 - 3
+   */
+  async play(bootLoaderAddress: number, portValues: Uint8Array) {
+    // Prepare the commands
+    const cmdBuffer = this.prepareBufferForSending(
+      Buffer.from([ bootLoaderAddress & 0xFF, bootLoaderAddress >> 8, ...portValues ])
+    );
+
+    await this.writeAndWait([ CMD_PLAY, ...cmdBuffer ]);
   }
 
   /**
@@ -113,10 +130,10 @@ export class Spcduino {
         reject('Port has not been opened');
       }
 
+      // Temporary event handler to wait for OKAY/FAIL resonse from spcduino
       const handleDataEvent = (data: Buffer) => {
         this.port.off('data', handleDataEvent);
         this.port.off('eror', reject);
-        console.log('got data?', data);
         if (data[0] !== RSP_OKAY) {
           reject(data);
         } else {
@@ -135,7 +152,13 @@ export class Spcduino {
     });
   }
 
-  private async writeBuffer(buffer: Buffer, offset: number, bytesWritten: number = 0) {
+  /**
+   * Sends a buffer to the spcduino in a chunked manner so as not to overflow the serial buffer
+   *
+   * @param buffer The data buffer to send
+   * @param offset The current offset within the buffer
+   */
+  private async writeBuffer(buffer: Buffer, offset: number) {
     return new Promise((resolve, reject) => {
       // Calculate how much data to send without going over the chunk size limit
       const chunkSize = buffer.byteLength - offset > MAX_SEND_SIZE ? MAX_SEND_SIZE : buffer.byteLength - offset;
@@ -152,13 +175,35 @@ export class Spcduino {
         }
         // Continue sending bytes until there's nothing left to send
         else if (offset < buffer.byteLength) {
-          resolve(this.writeBuffer(buffer, offset, bytesWritten + chunkSize));
+          resolve(this.writeBuffer(buffer, offset));
         } else {
           resolve();
-          console.log('Wrote ', bytesWritten + chunkSize, ' bytes');
         }
       });
     });
+  }
+
+  /**
+   * Writes a buffer to the spcduino at an address using CMD_SPC_CHUNK
+   *
+   * @param {number} addr The SPC address to write the buffer to
+   * @param {Buffer} buffer The buffer to send
+   */
+  private async writeSpcChunk(addr: number, buffer: Buffer) {
+    // Prep the command parameters but leave the command out so the checksum is as expected
+    const cmdBuffer = this.prepareBufferForSending(
+      Buffer.from([ addr & 0xFF, addr >> 8, buffer.byteLength ])
+    );
+
+    try {
+      // Send the command and wait for all clear
+      await this.writeAndWait([ CMD_SPC_CHUNK, ...cmdBuffer ]);
+
+      // Then send the actual data
+      await this.writeAndWait(this.prepareBufferForSending(Buffer.from([ ...buffer ])));
+    } catch (exc) {
+      throw new Error(`Error writing SPC data chunk: ${exc}`);
+    }
   }
 
   /**

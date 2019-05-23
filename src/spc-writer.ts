@@ -55,11 +55,18 @@ export class SpcWriter {
     programData[stackPointer + 5] = this.spc.regPC & 0xFF;
     programData[stackPointer + 6] = this.spc.regPC >> 8;
 
+    // Set aside the port values for booting
+    const portValues = Uint8Array.from(
+      [ programData[0xF4], programData[0xF5], programData[0xF6], programData[0xF7] ]
+    );
+
     // Reset the spcduino
     await spcduino.reset();
 
     // Populate the DSP stuffs
     await spcduino.initDsp(this.dspLoader, dspRegisters);
+    await spcduino.loadSPC(programData);
+    await spcduino.play(this.bootLoaderOffset, portValues);
   }
 
   /**
@@ -76,7 +83,7 @@ export class SpcWriter {
 
     // If there's no data on the external ports (0xF4 - 0xF7), make not as it
     // changes a value we write to the boot loader
-    const hasInPortValues = !programData[0xF4] && !programData[0xF5] && !programData[0xF6] && !programData[0xF7];
+    const hasInPortValues = !!(programData[0xF4] || programData[0xF5] || programData[0xF6] || programData[0xF7]);
 
     // Copy over the boot loader program and replace certain values with data
     // from the SPC program

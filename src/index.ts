@@ -10,7 +10,7 @@ async function main() {
   console.log('Connected to spcduino');
 
   const writer = new SpcWriter();
-  await writer.load(path.resolve('/tmp/blargg.spc'));
+  await writer.load(path.resolve('/tmp/dk-swing.spc'));
   writer.play(spcduino);
 }
 
