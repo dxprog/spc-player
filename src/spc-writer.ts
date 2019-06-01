@@ -42,6 +42,15 @@ export class SpcWriter {
     dspRegisters[0x6C] = 0x60;
     dspRegisters[0x4C] = 0x00;
 
+    // Clear out the echo region
+    if (!(this.spc.dspRegisters[0x6C] & 0x20)) {
+      console.log('Clearing echo region');
+      const echoRegionStart = this.spc.dspRegisters[0x6D] << 8;
+      let echoRegionSize = (this.spc.dspRegisters[0x7D] & 0x0F) * 0x800;
+      echoRegionSize = echoRegionSize === 0 ? 4 : echoRegionSize;
+      programData.fill(0x00, echoRegionStart, echoRegionStart + echoRegionSize);
+    }
+
     // Copy in the boot loader
     this.bootLoader.copy(programData, this.bootLoaderOffset);
 
@@ -59,6 +68,13 @@ export class SpcWriter {
     const portValues = Uint8Array.from(
       [ programData[0xF4], programData[0xF5], programData[0xF6], programData[0xF7] ]
     );
+
+    // Mess around with IPL RAM
+    if (this.spc.programData[0xF1] & 0x80) {
+      console.log('Writing IPL RAM data');
+      const iplRam = Buffer.from([ ...this.spc.iplRam ]);
+      iplRam.copy(programData, 0xFFC0);
+    }
 
     // Reset the spcduino
     await spcduino.reset();
@@ -95,7 +111,7 @@ export class SpcWriter {
     this.bootLoader[0x16] = programData[0xF7];
     this.bootLoader[0x1A] = programData[0xF1] & 0xCF;
     this.bootLoader[0x20] = this.spc.dspRegisters[0x6C];
-    this.bootLoader[0x26] = this.spc.dspRegisters[0x47];
+    this.bootLoader[0x26] = this.spc.dspRegisters[0x4C];
     this.bootLoader[0x29] = programData[0xF2];
   }
 

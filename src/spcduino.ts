@@ -89,7 +89,7 @@ export class Spcduino {
       buffer = this.prepareBufferForSending(buffer);
       await this.writeAndWait([ CMD_START_SPC, ...buffer ]);
 
-      // Send everything starting at address 0x100 (after the ports and such)
+      // Send everything starting at address 0x100 (after the ports and such) but before IPL RAM
       let currentAddress = 0x100;
       while (currentAddress < 0xFFFF) {
         buffer = Buffer.alloc(SPC_CHUNK_SIZE);
@@ -97,6 +97,7 @@ export class Spcduino {
         await this.writeSpcChunk(currentAddress, buffer);
         currentAddress += SPC_CHUNK_SIZE;
       }
+
     } catch (exc) {
       const errorMsg = exc === RSP_BAD_CHECKSUM ? 'Failed checksum' : 'Unknown error';
       throw new Error(`Error loading SPC data: ${errorMsg}`);
