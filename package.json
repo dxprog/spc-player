@@ -22,10 +22,12 @@
   },
   "homepage": "https://github.com/dxprog/spc-player#readme",
   "dependencies": {
+    "commander": "^2.20.0",
     "serialport": "^7.1.5",
-    "spc-reader": "^1.0.1"
+    "spc-reader": "^1.1.1"
   },
   "devDependencies": {
+    "@types/commander": "^2.12.2",
     "@types/serialport": "^7.0.3",
     "ts-node": "^8.1.0",
     "typescript": "^3.4.5"
