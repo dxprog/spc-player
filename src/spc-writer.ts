@@ -13,6 +13,7 @@ export class SpcWriter {
   private bootLoaderOffset: number;
   private stackPointer: number;
   private dspLoader: Buffer;
+  private clearEchoRegion: boolean;
 
   /**
    * Loads and prepares an SPC for playing
@@ -24,6 +25,9 @@ export class SpcWriter {
 
     // Calculate where the stack pointer will be
     this.stackPointer = this.spc.regSP - 6;
+
+    // Save the echo region clear flag
+    this.clearEchoRegion = !(this.spc.dspRegisters[0x6C] & 0x20);
 
     // Write the loader programs
     this.writeBootLoader();
@@ -43,7 +47,7 @@ export class SpcWriter {
     dspRegisters[0x4C] = 0x00;
 
     // Clear out the echo region
-    if (!(this.spc.dspRegisters[0x6C] & 0x20)) {
+    if (this.clearEchoRegion) {
       console.log('Clearing echo region');
       const echoRegionStart = this.spc.dspRegisters[0x6D] << 8;
       let echoRegionSize = (this.spc.dspRegisters[0x7D] & 0x0F) * 0x800;
@@ -143,8 +147,8 @@ export class SpcWriter {
 
     // Start at the back of the SPC and work backwards
     for (let i = HIGHEST_BOOTABLE_ADDRESS; i > LOWEST_BOOTABLE_ADDRESS + bootLoaderSize; i--) {
-      // If this is inside echo space, move along
-      if (i >= dspEchoAddress && i <= dspEchoAddress + dspEchoSize) {
+      // If this is inside echo space and that shouldn't be touched, keep searching
+      if (!this.clearEchoRegion && i >= dspEchoAddress && i <= dspEchoAddress + dspEchoSize) {
         continue;
       }
 
