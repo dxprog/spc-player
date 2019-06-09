@@ -134,7 +134,7 @@ export class Spcduino {
       // Temporary event handler to wait for OKAY/FAIL resonse from spcduino
       const handleDataEvent = (data: Buffer) => {
         this.port.off('data', handleDataEvent);
-        this.port.off('eror', reject);
+        this.port.off('error', reject);
         if (data[0] !== RSP_OKAY) {
           reject(data);
         } else {
@@ -147,7 +147,7 @@ export class Spcduino {
       buffer = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
       this.writeBuffer(buffer, 0).catch(err => {
         this.port.off('data', handleDataEvent);
-        this.port.off('eror', reject);
+        this.port.off('error', reject);
         reject(err);
       });
     });
